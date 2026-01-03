@@ -36,7 +36,7 @@ class AgentState(TypedDict):
     draft_id: Optional[str] # New field to track the created draft
 
 # Initialize Gemini
-llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
 # --- 2. GOOGLE SERVICE UTILITIES ---
 def get_google_services():
@@ -102,14 +102,45 @@ def fetch_unread_emails(service, max_results=5):
 def categorize_node(state: AgentState):
     print(f"🧐 Analyzing: {state['subject'][:40]}...")
     prompt = (
-        "You are an AI Executive Assistant. Categorize this email into: 'spam', 'fyi', or 'action'.\n"
-        "Return JSON: {\"category\": \"...\", \"summary\": \"...\"}"
+        "You are an AI Executive Assistant. Categorize this email into one of these categories:\n\n"
+        "**action**: Emails that REQUIRE an EMAIL RESPONSE from the recipient:\n"
+        "  - Direct questions from real people asking for your input or reply\n"
+        "  - Meeting requests or scheduling proposals from colleagues\n"
+        "  - Tasks assigned to you by managers or clients\n"
+        "  - Requests for decisions, approvals, or feedback that need your written response\n"
+        "  - Emails from humans where NOT replying would be rude or unprofessional\n\n"
+        "**fyi**: Informational emails that do NOT require an email response:\n"
+        "  - ALL automated emails from services (Google, Uber, Atlassian, GitHub, etc.)\n"
+        "  - Security alerts, password resets, account notifications (even if they say 'action required')\n"
+        "  - Subscription reminders, renewal notices, platform notifications\n"
+        "  - Receipts, confirmations, order updates, shipping notifications\n"
+        "  - Newsletters, blog updates, marketing emails\n"
+        "  - System-generated alerts or warnings (even if they suggest checking something)\n"
+        "  - Status updates, reports you're CC'd on\n"
+        "  - Any email where the 'action' is clicking a button/link, NOT writing a reply\n\n"
+        "**spam**: Unwanted or irrelevant emails:\n"
+        "  - Unsolicited marketing or promotional emails from unknown senders\n"
+        "  - Phishing attempts\n"
+        "  - Obvious junk mail\n\n"
+        "KEY RULE: If the email is automated/system-generated OR the action is to click a link (not reply), choose 'fyi'.\n\n"
+        "Return ONLY valid JSON with no markdown formatting: {\"category\": \"action|fyi|spam\", \"summary\": \"brief summary\"}"
     )
     user_msg = f"From: {state['sender']}\nSubject: {state['subject']}\nContent: {state['email_content']}"
-    response = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_msg)])
-    content = response.content.replace("```json", "").replace("```", "").strip()
-    data = json.loads(content)
-    return {"category": data.get("category", "fyi"), "summary": data.get("summary", "No summary")}
+    
+    try:
+        response = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_msg)])
+        content = response.content.replace("```json", "").replace("```", "").strip()
+        
+        # Debug: print what we're trying to parse
+        print(f"DEBUG - Raw response: {content[:200]}")
+        
+        data = json.loads(content)
+        return {"category": data.get("category", "fyi"), "summary": data.get("summary", "No summary")}
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON Parse Error: {e}")
+        print(f"Response content: {content}")
+        # Fallback to safe defaults
+        return {"category": "fyi", "summary": f"Error parsing response: {state['subject']}"}
 
 def calendar_check_node(state: AgentState):
     """If the email is an action item, check if it mentions a date and check the calendar."""
@@ -121,15 +152,17 @@ def calendar_check_node(state: AgentState):
         f"Today's date is {datetime.now().isoformat()}. "
         "Return the start and end time in ISO 8601 format with timezone (e.g., 2025-12-29T14:00:00-08:00). "
         "If no specific time is mentioned, return null for both.\n"
-        "Return JSON: {\"start\": \"...\", \"end\": \"...\"}"
+        "Return ONLY valid JSON with no markdown: {\"start\": \"...\", \"end\": \"...\"}"
     )
     
-    response = llm.invoke([SystemMessage(content=date_prompt), HumanMessage(content=state['email_content'])])
-    content = response.content.replace("```json", "").replace("```", "").strip()
-    
     try:
+        response = llm.invoke([SystemMessage(content=date_prompt), HumanMessage(content=state['email_content'])])
+        content = response.content.replace("```json", "").replace("```", "").strip()
+        
         time_data = json.loads(content)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        print(f"❌ Calendar JSON Parse Error: {e}")
+        print(f"Response content: {content}")
         return {"calendar_status": "Could not parse date from email."}
     
     if not time_data.get('start') or time_data.get('start') == 'null':
@@ -202,11 +235,21 @@ def draft_reply_node(state: AgentState):
         f"Calendar Status: {state['calendar_status'] or 'N/A'}. "
         "If there is a conflict, politely decline or ask for another time. "
         "If free, confirm. If no time was mentioned, just acknowledge the email.\n"
-        "Return JSON: {\"subject\": \"...\", \"body\": \"...\"}"
+        "Return ONLY valid JSON with no markdown: {\"subject\": \"...\", \"body\": \"...\"}"
     )
     
-    response = llm.invoke([SystemMessage(content=reply_prompt), HumanMessage(content=state['email_content'])])
-    draft_content = json.loads(response.content.replace("```json", "").replace("```", "").strip())
+    try:
+        response = llm.invoke([SystemMessage(content=reply_prompt), HumanMessage(content=state['email_content'])])
+        content = response.content.replace("```json", "").replace("```", "").strip()
+        draft_content = json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"❌ Draft JSON Parse Error: {e}")
+        print(f"Response content: {response.content}")
+        # Create a simple fallback draft
+        draft_content = {
+            "subject": f"Re: {state['subject']}",
+            "body": "Thank you for your email. I will review this and get back to you shortly."
+        }
 
     # Get the original email details for proper threading
     original_email = gmail_service.users().messages().get(userId='me', id=state['email_id']).execute()
@@ -261,7 +304,7 @@ agent_app = workflow.compile()
 def main():
     try:
         gmail_service, _ = get_google_services()
-        emails = fetch_unread_emails(gmail_service)
+        emails = fetch_unread_emails(gmail_service, max_results=10)
         if not emails:
             print("Inbox is already Zero! 🎉")
             return
