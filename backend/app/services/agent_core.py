@@ -4,6 +4,10 @@ from datetime import datetime
 from email.message import EmailMessage
 from typing import TypedDict, Literal, Optional, Any
 from functools import partial
+from dotenv import load_dotenv
+
+# Load env vars (GOOGLE_API_KEY) immediately
+load_dotenv()
 
 # AI & Graph Libraries
 from langchain_google_genai import ChatGoogleGenerativeAI
