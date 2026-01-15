@@ -10,3 +10,4 @@ langgraph
 python-dotenv
 streamlit
 pandas
+requests

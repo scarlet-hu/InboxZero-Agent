@@ -2,6 +2,10 @@ import base64
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from app.models import GmailCredentials
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 def get_gmail_service(creds_data: GmailCredentials):
     """Creates a Google API service instance from dynamic user credentials."""
@@ -9,8 +13,8 @@ def get_gmail_service(creds_data: GmailCredentials):
         token=creds_data.token,
         refresh_token=creds_data.refresh_token,
         token_uri=creds_data.token_uri,
-        client_id=creds_data.client_id,
-        client_secret=creds_data.client_secret,
+        client_id= os.getenv('GOOGLE_CLIENT_ID'),
+        client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
         scopes=creds_data.scopes
     )
     return build('gmail', 'v1', credentials=creds)
@@ -21,8 +25,8 @@ def get_calendar_service(creds_data: GmailCredentials):
         token=creds_data.token,
         refresh_token=creds_data.refresh_token,
         token_uri=creds_data.token_uri,
-        client_id=creds_data.client_id,
-        client_secret=creds_data.client_secret,
+        client_id=os.getenv('GOOGLE_CLIENT_ID'),
+        client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
         scopes=creds_data.scopes
     )
     return build('calendar', 'v3', credentials=creds)
