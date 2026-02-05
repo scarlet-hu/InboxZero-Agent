@@ -1,3 +1,6 @@
+fastapi
+uvicorn[standard]
+pydantic
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
@@ -7,3 +10,5 @@ langgraph
 python-dotenv
 streamlit
 pandas
+requests
+jwt

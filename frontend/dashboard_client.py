@@ -2,18 +2,15 @@ import streamlit as st
 import pandas as pd
 import requests
 import os
-import json
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 # --- CONFIGURATION ---
 BACKEND_URL = "http://localhost:8000"  # Address of your running FastAPI server
-CLIENT_SECRETS_FILE = os.path.join(os.path.dirname(__file__), "frontend", "credentials.json") # Needed for the Login Flow
+CLIENT_SECRETS_FILE = "credentials.json" # Needed for the Login Flow
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.compose',
-    'https://www.googleapis.com/auth/calendar.readonly',
-    'https://www.googleapis.com/auth/userinfo.email',  # Add this to get user email
-    'openid'  # Add this for OpenID Connect
+    'https://www.googleapis.com/auth/calendar.readonly'
 ]
 
 # Page Setup
@@ -43,61 +40,17 @@ def login_with_google():
         flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
         creds = flow.run_local_server(port=0)
         
-        # Get user email from the ID token (more reliable than separate API call)
-        import google.auth.transport.requests
-        from google.oauth2.credentials import Credentials
-        
-        # Create a Credentials object
-        google_creds = Credentials(
-            token=creds.token,
-            refresh_token=creds.refresh_token,
-            token_uri=creds.token_uri,
-            client_id=creds.client_id,
-            client_secret=creds.client_secret,
-            scopes=creds.scopes
-        )
-        
-        # Store the full credentials object as a dict in session state
+        # Store only the user's tokens (client_id/secret are in backend .env)
         st.session_state['auth_token'] = {
             "token": creds.token,
             "refresh_token": creds.refresh_token,
             "token_uri": creds.token_uri,
-            "client_id": creds.client_id,
-            "client_secret": creds.client_secret,
             "scopes": creds.scopes
         }
         
-        # Try to get email from ID token first, then fall back to userinfo API
-        user_email = "user@example.com"
-        
-        # Method 1: Decode ID token if available
-        if hasattr(creds, 'id_token') and creds.id_token:
-            import jwt
-            try:
-                decoded = jwt.decode(creds.id_token, options={"verify_signature": False})
-                user_email = decoded.get('email', user_email)
-                st.success(f"✅ Got email from ID token: {user_email}")
-            except Exception as e:
-                st.warning(f"Could not decode ID token: {e}")
-        
-        # Method 2: Fetch from userinfo API (fallback)
-        if user_email == "user@example.com":
-            try:
-                userinfo_response = requests.get(
-                    "https://www.googleapis.com/oauth2/v2/userinfo",
-                    headers={"Authorization": f"Bearer {creds.token}"}
-                )
-                if userinfo_response.status_code == 200:
-                    user_info = userinfo_response.json()
-                    user_email = user_info.get('email', user_email)
-                    st.success(f"✅ Got email from userinfo API: {user_email}")
-                else:
-                    st.error(f"⚠️ Userinfo API returned status {userinfo_response.status_code}: {userinfo_response.text}")
-            except Exception as e:
-                st.error(f"⚠️ Exception calling userinfo API: {str(e)}")
-        
-        st.session_state['user_email'] = user_email
-        
+        # Simple hack to get user email (not strictly needed for logic, but good for UI)
+        # In a real app, decode the ID token. Here we just set a placeholder or fetch profile.
+        st.session_state['user_email'] = "user@example.com" 
         st.rerun()
         
     except Exception as e:
@@ -137,15 +90,9 @@ if run_btn:
     with st.spinner("Contacting Agent Backend..."):
         try:
             # Prepare the payload for the API
-            # IMPORTANT: Filter out client_id/secret. The backend has its own copies in .env.
-            # We only send the user's tokens.
-            safe_creds = {
-                k: v for k, v in st.session_state['auth_token'].items() 
-                if k in ['token', 'refresh_token', 'token_uri', 'scopes']
-            }
-
+            # The backend loads client_id/secret from its .env file
             payload = {
-                "credentials": safe_creds,
+                "credentials": st.session_state['auth_token'],
                 "max_results": max_emails
             }
             
