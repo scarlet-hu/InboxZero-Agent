@@ -112,9 +112,8 @@ InboxZeroAgent/
 │   ├── credentials.json         # Google OAuth client secrets
 │   └── requirements.txt         # Python dependencies
 ├── frontend/
-│   ├── credentials.json         # OAuth secrets (client-side)
-│   └── dashboard_client.py      # Streamlit UI logic
-├── dashboard.py                 # Main Streamlit entry point
+│   └── credentials.json         # OAuth client config for Streamlit login
+├── dashboard.py                 # Main and only Streamlit entry point
 ├── token.json                   # Cached OAuth tokens
 └── Readme.md                    # This file
 ```
@@ -150,7 +149,15 @@ InboxZeroAgent/
    Create a `.env` file in the `backend/` directory:
    ```env
    GOOGLE_API_KEY=your_gemini_api_key_here
+   GOOGLE_CLIENT_ID=your_google_oauth_client_id
+   GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
    ```
+
+   For the Streamlit app, set a redirect URI that matches your Google OAuth app:
+   ```env
+   GOOGLE_REDIRECT_URI=http://localhost:8501
+   ```
+   Or add the same URI to the `redirect_uris` list in `frontend/credentials.json`.
 
 5. **Add Google OAuth credentials**
    - Place `credentials.json` in `backend/` and `frontend/` directories
@@ -294,5 +301,3 @@ For issues or questions, please open a GitHub issue.
 ---
 
 **Status:** Alpha - Active Development 🚧
-
-

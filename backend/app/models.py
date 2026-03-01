@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class GmailCredentials(BaseModel):
     token: str
-    refresh_token: str
+    refresh_token: Optional[str] = None
     token_uri: str = "https://oauth2.googleapis.com/token" # Default for Google
     scopes: List[str]
 
