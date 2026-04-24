@@ -2,6 +2,8 @@
 token.json
 credentials.json
 __pycache__
+.coverage
+.pytest_cache/
 eval/results/*.json
 eval/results/*.md
 !eval/results/.gitkeep
