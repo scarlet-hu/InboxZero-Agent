@@ -104,7 +104,6 @@ InboxZeroAgent/
 │   ├── app/
 │   │   ├── main.py              # FastAPI app entry point
 │   │   ├── models.py            # Pydantic data models
-│   │   ├── api/
 │   │   │   └── endpoints.py     # API routes (/process, /usage)
 │   │   └── services/
 │   │       ├── agent_core.py    # LangGraph ReAct agent logic
@@ -247,6 +246,22 @@ Process unread emails from Gmail inbox.
 
 #### `GET /agent/usage`
 Get user's daily processing limits.
+
+## 🧪 Evaluation
+
+Categorization quality is measured against a labeled dataset of 30 emails
+(10 action / 15 fyi / 5 spam) covering common edge cases like automated alerts
+that say "action required" and gift-card / phishing scams.
+
+```bash
+set -a && source backend/.env && set +a
+python eval/run_eval.py
+```
+
+Reports (per-category P/R/F1, confusion matrix, latency p50/p95, and a
+misclassifications table) are written to `eval/results/`. See
+[`eval/Readme.md`](eval/Readme.md) for the full workflow, including how to
+A/B-test prompt changes with `--tag`.
 
 ## 🔐 Security Notes
 

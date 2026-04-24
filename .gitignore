@@ -2,3 +2,9 @@
 token.json
 credentials.json
 __pycache__
+eval/results/*.json
+eval/results/*.md
+!eval/results/.gitkeep
+.DS_Store
+IMPROVEMENTS.md
+interview-prep/
