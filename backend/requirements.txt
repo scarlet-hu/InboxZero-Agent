@@ -8,7 +8,5 @@ langchain-anthropic
 langchain-google-genai
 langgraph
 python-dotenv
-streamlit
-pandas
 requests
 pyjwt

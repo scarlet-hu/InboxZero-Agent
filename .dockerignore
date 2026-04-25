@@ -1,0 +1,36 @@
+# Python
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+.mypy_cache
+.ruff_cache
+
+# Virtualenv
+venv/
+.venv/
+
+# Local secrets (mounted via env_file at runtime)
+.env
+backend/.env
+token.json
+
+# Tests / dev
+tests/
+eval/results/
+.github/
+
+# Frontend (built with its own Dockerfile in web/)
+web/node_modules
+web/.next
+
+# Docs / IDE
+*.md
+!Readme.md
+.vscode/
+.idea/
+.DS_Store
+
+# Git
+.git/
+.gitignore

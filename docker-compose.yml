@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: inboxzero-backend
+    container_name: inboxzero-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - backend/.env
+    environment:
+      # OAuth needs absolute URLs.
+      BACKEND_URL: http://localhost:8000
+      FRONTEND_URL: http://localhost:3000
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: inboxzero-frontend
+    container_name: inboxzero-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # Browser fetches go to localhost:8000 (NOT compose service name —
+      # service DNS only resolves inside the compose network, not from
+      # the user's browser).
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped

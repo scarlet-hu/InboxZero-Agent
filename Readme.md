@@ -7,28 +7,26 @@ An intelligent email management system that uses AI to categorize, summarize, an
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────┐
-│   Streamlit │────▶│   FastAPI    │────▶│ ReAct Agent  │────▶│   Gmail API  │────▶│  Draft   │
-│  Dashboard  │     │   Backend    │     │  (LangGraph) │     │              │     │Generated │
-└─────────────┘     └──────────────┘     └──────────────┘     └──────────────┘     └────┬─────┘
-                             │                    │                                       │
-                             │                    ▼                                       │
-                             │            ┌──────────────┐                                │
-                             │            │  Calendar    │                                │
-                             │            │  API Check   │                                │
-                             │            └──────────────┘                                │
-                             │                                                            │
-                             ▼                                                            ▼
-                    ┌──────────────┐                                              ┌─────────────┐
-                    │    Human     │                                              │   Human     │
-                    │    Review    │◀─────────────────────────────────────────────│   Reviews   │
-                    └──────┬───────┘                                              └─────────────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │   Send/Edit  │
-                    │    Email     │
-                    └──────────────┘
+┌──────────────────────┐         ┌──────────────────────────┐
+│  Next.js (port 3000) │         │  FastAPI (port 8000)     │
+│  - / login page      │ ──────▶ │  /auth/login → Google    │
+│  - /dashboard        │ cookie  │  /auth/callback → JWT    │
+│  - shadcn/ui + SWR   │ ◀────── │  /auth/me, /auth/logout  │
+│                      │         │  /agent/process, /usage  │
+└──────────────────────┘         └──────────┬───────────────┘
+                                            │
+                                            ▼
+                                  ┌──────────────────────┐
+                                  │  LangGraph agent     │
+                                  │  categorize → check  │
+                                  │  calendar → draft    │
+                                  └──────────┬───────────┘
+                                             │
+                                             ▼
+                                  ┌──────────────────────┐
+                                  │  Gmail / Calendar    │
+                                  │  / Gemini APIs       │
+                                  └──────────────────────┘
 ```
 
 **Core Flow:**
@@ -51,8 +49,9 @@ An intelligent email management system that uses AI to categorize, summarize, an
 - **Python 3.x** - Core language
 
 ### Frontend
-- **Streamlit** - Interactive dashboard UI
-- **Pandas** - Data manipulation and display
+- **Next.js 16** (App Router, TypeScript)
+- **Tailwind CSS v4** + **shadcn/ui** components
+- **SWR** for client-side data fetching
 
 ### Authentication
 - **OAuth 2.0** - Google authentication flow
@@ -73,7 +72,7 @@ An intelligent email management system that uses AI to categorize, summarize, an
 - [x] **Smart Summarization** - Concise AI-generated email summaries
 - [x] **Calendar Integration** - Automatic scheduling conflict detection
 - [x] **Draft Generation** - AI-drafted responses for action items
-- [x] **Human Review Interface** - Streamlit dashboard for approving/editing drafts
+- [x] **Human Review Interface** - Next.js dashboard for approving/editing drafts
 - [x] **Usage Tracking** - Per-user email processing limits
 - [x] **ReAct Agent Workflow** - State-based email processing pipeline
 
@@ -104,18 +103,26 @@ An intelligent email management system that uses AI to categorize, summarize, an
 InboxZeroAgent/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI app entry point
+│   │   ├── main.py              # FastAPI app entry point + CORS
 │   │   ├── models.py            # Pydantic data models
-│   │   │   └── endpoints.py     # API routes (/process, /usage)
+│   │   ├── api/
+│   │   │   ├── auth.py          # /auth/login, /callback, /me, /logout
+│   │   │   └── endpoints.py     # /agent/process, /agent/usage
 │   │   └── services/
-│   │       ├── agent_core.py    # LangGraph ReAct agent logic
+│   │       ├── auth.py          # OAuth flow, PKCE, JWT session
+│   │       ├── agent_core.py    # LangGraph ReAct agent
 │   │       └── google_utils.py  # Gmail/Calendar API wrappers
 │   ├── credentials.json         # Google OAuth client secrets
-│   └── requirements.txt         # Python dependencies
-├── frontend/
-│   └── credentials.json         # OAuth client config for Streamlit login
-├── dashboard.py                 # Main and only Streamlit entry point
-├── token.json                   # Cached OAuth tokens
+│   └── requirements.txt
+├── web/                         # Next.js 16 + Tailwind + shadcn/ui
+│   ├── src/app/                 #   /, /dashboard
+│   ├── src/components/ui/       #   shadcn primitives
+│   └── src/lib/                 #   api.ts, useUser.ts
+├── eval/                        # Offline categorization eval harness
+├── tests/                       # pytest (backend)
+├── Dockerfile.backend
+├── web/Dockerfile               # Next.js multi-stage image
+├── docker-compose.yml
 └── Readme.md                    # This file
 ```
 
@@ -154,38 +161,45 @@ InboxZeroAgent/
    GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
    ```
 
-   For the Streamlit app, set a redirect URI that matches your Google OAuth app:
-   ```env
-   GOOGLE_REDIRECT_URI=http://localhost:8501
+   The OAuth callback runs on the backend, so the redirect URI in your
+   Google Cloud Console must point at FastAPI:
    ```
-   Or add the same URI to the `redirect_uris` list in `frontend/credentials.json`.
+   http://localhost:8000/auth/callback
+   ```
+   Add the same URI to the `redirect_uris` list in `backend/credentials.json`.
 
 5. **Add Google OAuth credentials**
-   - Place `credentials.json` in `backend/` and `frontend/` directories
-   - Download from [Google Cloud Console](https://console.cloud.google.com/)
+   - Download `credentials.json` from [Google Cloud Console](https://console.cloud.google.com/) and place it at `backend/credentials.json`.
 
 ### Running the Application
 
-1. **Start the backend server**
-   ```bash
-   cd backend
-   uvicorn app.main:app --reload
-   ```
-   API will run at `http://localhost:8000`
+**Option A — Docker Compose (recommended)**
 
-2. **Launch the dashboard** (in a new terminal)
-   ```bash
-   cd InboxZeroAgent
-   streamlit run dashboard.py
-   ```
-   Dashboard opens at `http://localhost:8501`
+```bash
+docker compose up --build
+```
 
-3. **Login and process emails**
-   - Click "Login with Google" in the dashboard
-   - Authorize Gmail and Calendar access
-   - Set max emails to process
-   - Review generated drafts
-   - Approve or discard
+- Backend: `http://localhost:8000` (Swagger at `/docs`)
+- Frontend: `http://localhost:3000`
+
+**Option B — Local dev (two terminals)**
+
+Terminal 1 — backend:
+```bash
+cd backend && uvicorn app.main:app --reload
+```
+
+Terminal 2 — frontend:
+```bash
+cd web && npm install && npm run dev
+```
+
+**Login flow**
+1. Open `http://localhost:3000` and click "Sign in with Google"
+2. Authorize Gmail + Calendar access
+3. Land on `/dashboard`
+4. Pick max emails to process and click "Run Agent"
+5. Review the categorized results / drafts
 
 ## 🧠 How It Works
 
