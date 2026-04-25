@@ -1,4 +1,5 @@
 from typing import List, Optional
+
 from pydantic import BaseModel
 
 # --- 1. DATA MODELS ---
@@ -10,7 +11,6 @@ class GmailCredentials(BaseModel):
     scopes: List[str]
 
 class ProcessRequest(BaseModel):
-    credentials: GmailCredentials
     max_results: int = 10
 
 class EmailResult(BaseModel):

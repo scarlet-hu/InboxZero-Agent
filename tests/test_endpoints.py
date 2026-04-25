@@ -1,23 +1,27 @@
 """FastAPI endpoint tests.
 
 We patch `get_gmail_service`, `get_calendar_service`, `fetch_unread_emails`,
-and the agent so the API layer exercises routing / request-model validation /
-error handling without touching Google or the LLM.
+and the agent so the API layer exercises routing / auth / error handling
+without touching Google or the LLM. Auth is exercised end-to-end by minting
+a real session JWT and sending it as a cookie.
 """
 from unittest.mock import MagicMock, patch
 
 import pytest
+from app.main import app
+from app.services.auth import SESSION_COOKIE_NAME, SessionData, sign_session
 from fastapi.testclient import TestClient
 
-from app.main import app
 
-
-VALID_CREDENTIALS = {
-    "token": "fake-token",
-    "refresh_token": "fake-refresh",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "scopes": ["https://www.googleapis.com/auth/gmail.modify"],
-}
+def _session_cookie() -> dict[str, str]:
+    token = sign_session(SessionData(
+        email="user@example.com",
+        token="fake-token",
+        refresh_token="fake-refresh",
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=["https://www.googleapis.com/auth/gmail.modify"],
+    ))
+    return {SESSION_COOKIE_NAME: token}
 
 
 @pytest.fixture
@@ -26,12 +30,12 @@ def client():
 
 
 @pytest.fixture
-def valid_request_body():
-    return {"credentials": VALID_CREDENTIALS, "max_results": 5}
+def auth_cookies():
+    return _session_cookie()
 
 
 # ---------------------------------------------------------------------------
-# Root + usage (trivial but free coverage)
+# Root + usage
 # ---------------------------------------------------------------------------
 
 def test_root_ok(client):
@@ -40,23 +44,24 @@ def test_root_ok(client):
     assert "Inbox Zero Agent" in resp.json()["message"]
 
 
-def test_usage_requires_user_header(client):
+def test_usage_requires_auth(client):
     resp = client.get("/agent/usage")
-    assert resp.status_code == 422  # missing X-User-Id
+    assert resp.status_code == 401
 
-    resp = client.get("/agent/usage", headers={"X-User-Id": "u-1"})
+
+def test_usage_returns_user_with_valid_cookie(client, auth_cookies):
+    resp = client.get("/agent/usage", cookies=auth_cookies)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["user_id"] == "u-1"
+    assert body["user_id"] == "user@example.com"
     assert body["daily_limit"] == 50
 
 
 # ---------------------------------------------------------------------------
-# /agent/process — happy path + edge cases
+# /agent/process
 # ---------------------------------------------------------------------------
 
 def _fake_agent(category="fyi"):
-    """Returns a mock compiled-graph with .invoke echoing a canned result."""
     agent = MagicMock()
     agent.invoke.return_value = {
         "email_id": "m1",
@@ -76,7 +81,7 @@ def _fake_agent(category="fyi"):
 @patch("app.api.endpoints.get_calendar_service")
 @patch("app.api.endpoints.get_gmail_service")
 def test_process_returns_results_for_each_email(
-    gmail, calendar, fetch, create_agent, client, valid_request_body
+    gmail, calendar, fetch, create_agent, client, auth_cookies
 ):
     gmail.return_value = MagicMock()
     calendar.return_value = MagicMock()
@@ -87,7 +92,9 @@ def test_process_returns_results_for_each_email(
     create_agent.return_value = _fake_agent("fyi")
 
     resp = client.post(
-        "/agent/process", json=valid_request_body, headers={"X-User-Id": "user-1"}
+        "/agent/process",
+        json={"max_results": 5},
+        cookies=auth_cookies,
     )
 
     assert resp.status_code == 200
@@ -102,14 +109,16 @@ def test_process_returns_results_for_each_email(
 @patch("app.api.endpoints.get_calendar_service")
 @patch("app.api.endpoints.get_gmail_service")
 def test_process_returns_empty_list_when_no_unread(
-    gmail, calendar, fetch, create_agent, client, valid_request_body
+    gmail, calendar, fetch, create_agent, client, auth_cookies
 ):
     gmail.return_value = MagicMock()
     calendar.return_value = MagicMock()
     fetch.return_value = []
 
     resp = client.post(
-        "/agent/process", json=valid_request_body, headers={"X-User-Id": "user-1"}
+        "/agent/process",
+        json={"max_results": 5},
+        cookies=auth_cookies,
     )
 
     assert resp.status_code == 200
@@ -118,26 +127,27 @@ def test_process_returns_empty_list_when_no_unread(
 
 
 @patch("app.api.endpoints.get_gmail_service")
-def test_process_500s_on_service_failure(gmail, client, valid_request_body):
+def test_process_500s_on_service_failure(gmail, client, auth_cookies):
     gmail.side_effect = RuntimeError("bad creds")
 
     resp = client.post(
-        "/agent/process", json=valid_request_body, headers={"X-User-Id": "user-1"}
+        "/agent/process",
+        json={"max_results": 5},
+        cookies=auth_cookies,
     )
     assert resp.status_code == 500
     assert "bad creds" in resp.json()["detail"]
 
 
-def test_process_rejects_missing_user_header(client, valid_request_body):
-    resp = client.post("/agent/process", json=valid_request_body)
-    assert resp.status_code == 422
+def test_process_rejects_request_without_session(client):
+    resp = client.post("/agent/process", json={"max_results": 5})
+    assert resp.status_code == 401
 
 
-def test_process_rejects_malformed_credentials(client):
+def test_process_rejects_tampered_cookie(client):
     resp = client.post(
         "/agent/process",
-        json={"credentials": {"token": "only-token"}, "max_results": 5},
-        headers={"X-User-Id": "user-1"},
+        json={"max_results": 5},
+        cookies={SESSION_COOKIE_NAME: "not.a.jwt"},
     )
-    # missing required `scopes`
-    assert resp.status_code == 422
+    assert resp.status_code == 401
