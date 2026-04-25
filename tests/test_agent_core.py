@@ -8,7 +8,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
 from app.services import agent_core
 from app.services.agent_core import (
     calendar_check_logic,

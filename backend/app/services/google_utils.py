@@ -1,9 +1,10 @@
 import base64
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+import os
+
 from app.models import GmailCredentials
 from dotenv import load_dotenv
-import os
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
 load_dotenv()
 
@@ -39,14 +40,14 @@ def fetch_unread_emails(service, max_results=5):
     try:
         results = service.users().messages().list(userId='me', labelIds=['INBOX', 'UNREAD'], maxResults=max_results).execute()
         messages = results.get('messages', [])
-        
+
         parsed_emails = []
         for msg_meta in messages:
             msg = service.users().messages().get(userId='me', id=msg_meta['id']).execute()
             headers = msg.get('payload', {}).get('headers', [])
             subject = next((h['value'] for h in headers if h['name'] == 'Subject'), "No Subject")
             sender = next((h['value'] for h in headers if h['name'] == 'From'), "Unknown")
-            
+
             parts = msg.get('payload', {}).get('parts', [])
             body = ""
             if not parts:
@@ -55,9 +56,9 @@ def fetch_unread_emails(service, max_results=5):
                 for part in parts:
                     if part['mimeType'] == 'text/plain':
                         body = part.get('body', {}).get('data', '')
-            
+
             decoded_body = base64.urlsafe_b64decode(body).decode('utf-8') if body else "No content"
-            
+
             parsed_emails.append({
                 "email_id": msg_meta['id'],
                 "sender": sender,

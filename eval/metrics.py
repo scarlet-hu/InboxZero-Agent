@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from statistics import median
 from typing import Iterable
 
@@ -130,7 +130,7 @@ def build_report(cases: list[CaseResult]) -> EvalReport:
 
 def render_markdown(report: EvalReport, model_name: str, dataset_path: str) -> str:
     lines = [
-        f"# Eval Report",
+        "# Eval Report",
         "",
         f"- **Model:** `{model_name}`",
         f"- **Dataset:** `{dataset_path}`",

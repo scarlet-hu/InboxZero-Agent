@@ -1,18 +1,19 @@
-import json
 import base64
+import json
 from datetime import datetime
 from email.message import EmailMessage
-from typing import TypedDict, Literal, Optional, Any
 from functools import partial
+from typing import Any, Literal, Optional, TypedDict
+
 from dotenv import load_dotenv
 
 # Load env vars (GOOGLE_API_KEY) immediately
 load_dotenv()
 
 # AI & Graph Libraries
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.graph import StateGraph, START, END
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.graph import END, START, StateGraph
 
 # Initialize Gemini (Global instance is fine, as API key is usually env-based)
 # Ensure GOOGLE_API_KEY is set in your .env
@@ -72,7 +73,7 @@ def categorize_logic(state: AgentState):
         "Return ONLY valid JSON, no markdown: {\"category\": \"action|fyi|spam\", \"summary\": \"brief summary\"}"
     )
     user_msg = f"From: {state['sender']}\nSubject: {state['subject']}\nContent: {state['email_content']}"
-    
+
     try:
         response = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_msg)])
         # Clean potential markdown
@@ -84,22 +85,22 @@ def categorize_logic(state: AgentState):
 
 def calendar_check_logic(state: AgentState, calendar_service: Any):
     """Checks the user's calendar if the email contains a date."""
-    print(f"🗓️  Checking calendar for context...")
-    
+    print("🗓️  Checking calendar for context...")
+
     # 1. Extract Date
     date_prompt = (
         f"Identify if this email suggests a meeting date. Today is {datetime.now().isoformat()}. "
         "Return start/end in ISO 8601. If none, return null.\n"
         "Return ONLY valid JSON with no markdown: {\"subject\": \"...\", \"body\": \"...\"}"
     )
-    
+
     try:
         response = llm.invoke([SystemMessage(content=date_prompt), HumanMessage(content=state['email_content'])])
         content = response.content.replace("```json", "").replace("```", "").strip()
         time_data = json.loads(content)
     except Exception:
         return {"calendar_status": "Could not parse date."}
-    
+
     if not time_data.get('start') or time_data.get('start') == 'null':
         return {"calendar_status": "No specific time mentioned."}
 
@@ -112,7 +113,7 @@ def calendar_check_logic(state: AgentState, calendar_service: Any):
             singleEvents=True,
             orderBy='startTime'
         ).execute()
-        
+
         events = events_result.get('items', [])
         status = f"✅ Free at {time_data['start']}." if not events else f"❌ Conflict: '{events[0]['summary']}'."
         return {"calendar_status": status}
@@ -121,14 +122,14 @@ def calendar_check_logic(state: AgentState, calendar_service: Any):
 
 def draft_reply_logic(state: AgentState, gmail_service: Any):
     """Drafts a reply in Gmail using the injected service."""
-    print(f"✍️  Drafting reply...")
-    
+    print("✍️  Drafting reply...")
+
     # Check for existing drafts first
     try:
         # Get thread ID
         email_details = gmail_service.users().messages().get(userId='me', id=state['email_id']).execute()
         thread_id = email_details.get('threadId')
-        
+
         drafts = gmail_service.users().drafts().list(userId='me').execute().get('drafts', [])
         for d in drafts:
             if d.get('message', {}).get('threadId') == thread_id:
@@ -142,7 +143,7 @@ def draft_reply_logic(state: AgentState, gmail_service: Any):
         f"Context: {state['category']}. Calendar: {state['calendar_status'] or 'N/A'}. "
         "JSON: {\"subject\": \"...\", \"body\": \"...\"}"
     )
-    
+
     try:
         response = llm.invoke([SystemMessage(content=reply_prompt), HumanMessage(content=state['email_content'])])
         content = response.content.replace("```json", "").replace("```", "").strip()
@@ -156,7 +157,7 @@ def draft_reply_logic(state: AgentState, gmail_service: Any):
         message.set_content(draft_content['body'])
         message['To'] = state['sender']
         message['Subject'] = draft_content['subject']
-        
+
         # Threading headers
         headers = email_details.get('payload', {}).get('headers', [])
         msg_id = next((h['value'] for h in headers if h['name'].lower() == 'message-id'), None)
@@ -166,7 +167,7 @@ def draft_reply_logic(state: AgentState, gmail_service: Any):
 
         encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
         create_message = {'message': {'raw': encoded_message, 'threadId': thread_id}}
-        
+
         draft = gmail_service.users().drafts().create(userId="me", body=create_message).execute()
         return {"draft_id": draft['id']}
     except Exception as e:
@@ -180,7 +181,7 @@ def create_inbox_agent(gmail_service, calendar_service):
     Creates and compiles a LangGraph agent specific to a user's session.
     Dependency Injection: pass the authenticated services here.
     """
-    
+
     # Bind the services to the nodes using partials
     # This "locks in" the specific user's Gmail/Calendar service for this graph instance
     calendar_node_with_service = partial(calendar_check_logic, calendar_service=calendar_service)
@@ -188,7 +189,7 @@ def create_inbox_agent(gmail_service, calendar_service):
 
     # Build the graph
     workflow = StateGraph(AgentState)
-    
+
     workflow.add_node("categorizer", categorize_logic)
     workflow.add_node("check_calendar", calendar_node_with_service)
     workflow.add_node("draft_reply", draft_node_with_service)

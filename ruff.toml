@@ -1,0 +1,10 @@
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]  # line-too-long — let formatter / reviewer judge
+
+[lint.per-file-ignores]
+# load_dotenv() must run before LangChain imports read GOOGLE_API_KEY.
+"backend/app/services/agent_core.py" = ["E402"]

@@ -1,5 +1,7 @@
 # Inbox Zero Agent (Human-in-the-Loop)
 
+[![CI](https://github.com/scarlet-hu/InboxZero-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/scarlet-hu/InboxZero-Agent/actions/workflows/ci.yml)
+
 An intelligent email management system that uses AI to categorize, summarize, and draft responses for your Gmail inbox, with human review before sending.
 
 ## 🏗️ Architecture
