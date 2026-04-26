@@ -21,9 +21,10 @@
       name: Deploy frontend                                                                                                                        
       runs-on: ubuntu-latest
       concurrency: deploy-frontend
-      steps:                                                                                                                                       
+      steps:
         - uses: actions/checkout@v4
-        - uses: superfly/flyctl-actions/setup-flyctl@master                                                                                        
-        - run: flyctl deploy --remote-only --config web/fly.toml
-          env:                                                                                                                                     
+        - uses: superfly/flyctl-actions/setup-flyctl@master
+        - run: flyctl deploy --remote-only
+          working-directory: web
+          env:
             FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
