@@ -2,6 +2,9 @@
 
 [![CI](https://github.com/scarlet-hu/InboxZero-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/scarlet-hu/InboxZero-Agent/actions/workflows/ci.yml)
 
+🚀 **Live demo:** https://inboxzero-frontend.fly.dev/  
+> ⚠️ Backend uses Fly.io `auto_stop_machines = 'stop'` for zero-idle cost — the first request after an idle period takes ~5–6 seconds to wake the machine; subsequent requests are fast.
+
 An intelligent email management system that uses AI to categorize, summarize, and draft responses for your Gmail inbox, with human review before sending.
 
 ## 🏗️ Architecture
@@ -28,6 +31,28 @@ An intelligent email management system that uses AI to categorize, summarize, an
                                   │  / Gemini APIs       │
                                   └──────────────────────┘
 ```
+
+## 🔌 MCP Server
+
+InboxZero exposes Gmail and Calendar tools as an **MCP server**, enabling direct use from Claude Desktop, Cursor, and any other MCP-compatible client — no FastAPI layer required.
+
+![Claude Desktop using InboxZero MCP tools](mcp-use-claude.png)
+
+```bash
+# Connect to Claude Desktop — add to ~/Library/Application Support/Claude/claude_desktop_config.json
+{
+  "mcpServers": {
+    "inboxzero": {
+      "command": "/path/to/InboxZeroAgent/venv/bin/python",
+      "args": ["/path/to/InboxZeroAgent/backend/mcp_server.py"]
+    }
+  }
+}
+```
+
+**Available tools:** `list_unread_emails` · `check_calendar_conflicts` · `classify_email`
+
+---
 
 **Core Flow:**
 1. **Fetch** → Retrieve unread emails via Gmail API

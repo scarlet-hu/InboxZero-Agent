@@ -10,3 +10,5 @@ eval/results/*.md
 .DS_Store
 IMPROVEMENTS.md
 interview-prep/
+.claude
+venv/
