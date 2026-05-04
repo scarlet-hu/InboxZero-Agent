@@ -17,16 +17,15 @@ import json
 import sys
 from pathlib import Path
 
-# Make "backend/" importable as the Python root
-sys.path.insert(0, str(Path(__file__).parent))
-
 from dotenv import load_dotenv
-
-load_dotenv(Path(__file__).parent / ".env")
-
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
+
+# sys.path must be prepended before any local app.* imports.
+# All app.* imports are deferred inside functions, so this ordering is safe.
+sys.path.insert(0, str(Path(__file__).parent))
+load_dotenv(Path(__file__).parent / ".env")
 
 app = Server("inboxzero")
 
@@ -37,6 +36,7 @@ app = Server("inboxzero")
 def _load_creds():
     """Load Google OAuth credentials from token.json, refreshing if expired."""
     import os
+
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials as GoogleCredentials
 

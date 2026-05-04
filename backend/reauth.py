@@ -16,12 +16,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-sys.path.insert(0, str(Path(__file__).parent))
 from dotenv import load_dotenv
-
-load_dotenv(Path(__file__).parent / ".env")
-
 from google_auth_oauthlib.flow import Flow
+
+sys.path.insert(0, str(Path(__file__).parent))
+load_dotenv(Path(__file__).parent / ".env")
 
 CREDENTIALS_PATH = Path(__file__).parent / "credentials.json"
 TOKEN_PATH = Path(__file__).parent.parent / "token.json"
