@@ -19,15 +19,14 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* vars are baked into the bundle at build time,
+        # so they must be passed as build args, not runtime environment.
+        NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
     image: inboxzero-frontend
     container_name: inboxzero-frontend
     ports:
       - "3000:3000"
-    environment:
-      # Browser fetches go to localhost:8000 (NOT compose service name —
-      # service DNS only resolves inside the compose network, not from
-      # the user's browser).
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
     depends_on:
       - backend
     restart: unless-stopped
