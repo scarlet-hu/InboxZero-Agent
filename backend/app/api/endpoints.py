@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 
 from app.models import EmailResult, GmailCredentials, ProcessRequest
@@ -5,8 +6,6 @@ from app.services.agent_core import create_inbox_agent
 from app.services.auth import SessionData, get_current_session
 from app.services.demo_data import get_demo_results
 from app.services.google_utils import fetch_unread_emails, get_calendar_service, get_gmail_service
-
-import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter()
