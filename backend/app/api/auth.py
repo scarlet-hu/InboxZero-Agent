@@ -19,6 +19,7 @@ from app.services.auth import (
     get_current_session,
     is_valid_oauth_state,
     pop_verifier,
+    session_cookie_kwargs,
     sign_session,
     store_verifier,
 )
@@ -92,9 +93,9 @@ def auth_callback(
         key=SESSION_COOKIE_NAME,
         value=jwt_token,
         httponly=True,
-        samesite="lax",
         max_age=SESSION_TTL_SECONDS,
         path="/",
+        **session_cookie_kwargs(),
     )
     return resp
 
@@ -121,9 +122,9 @@ def auth_demo_login() -> RedirectResponse:
         key=SESSION_COOKIE_NAME,
         value=jwt_token,
         httponly=True,
-        samesite="lax",
         max_age=SESSION_TTL_SECONDS,
         path="/",
+        **session_cookie_kwargs(),
     )
     return resp
 

@@ -76,6 +76,23 @@ def frontend_url() -> str:
     return os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 
 
+def session_cookie_kwargs() -> dict:
+    """Cookie attributes for the session cookie.
+
+    Frontend and backend live on different fly.dev subdomains in production —
+    fly.dev is on the Public Suffix List, so browsers treat them as
+    cross-site. SameSite=Lax blocks cross-site fetch from sending the cookie,
+    so /auth/me returns 401. Use SameSite=None+Secure when the frontend is
+    served over HTTPS; keep Lax for local http development (Secure cookies
+    aren't sent over plain http).
+    """
+    is_https = frontend_url().startswith("https://")
+    return {
+        "samesite": "none" if is_https else "lax",
+        "secure": is_https,
+    }
+
+
 # ---------------------------------------------------------------------------
 # OAuth state (HMAC-signed nonce + timestamp)
 # ---------------------------------------------------------------------------
