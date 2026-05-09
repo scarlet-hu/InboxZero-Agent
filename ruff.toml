@@ -8,3 +8,7 @@ ignore = ["E501"]  # line-too-long — let formatter / reviewer judge
 [lint.per-file-ignores]
 # load_dotenv() must run before LangChain imports read GOOGLE_API_KEY.
 "backend/app/services/agent_core.py" = ["E402"]
+"backend/app/services/agent_core_react.py" = ["E402"]
+# Import block is intentionally interleaved with a TEMP swap comment for
+# the ReAct-vs-state-machine experiment switch; see docs/react-vs-state-machine.md.
+"backend/app/api/endpoints.py" = ["I001"]
