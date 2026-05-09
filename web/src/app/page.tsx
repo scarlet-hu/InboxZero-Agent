@@ -5,7 +5,7 @@ import { Suspense } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { loginUrl } from "@/lib/api";
+import { demoLoginUrl, loginUrl } from "@/lib/api";
 
 function LoginCard() {
   const params = useSearchParams();
@@ -29,6 +29,18 @@ function LoginCard() {
         <Button asChild size="lg">
           <a href={loginUrl()}>Sign in with Google</a>
         </Button>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="h-px flex-1 bg-border" />
+          <span>or</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+        <Button asChild size="lg" variant="outline">
+          <a href={demoLoginUrl()}>Try Demo (no Google login)</a>
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Demo mode loads sample emails and a calendar conflict so you can
+          explore the agent without granting access to a real inbox.
+        </p>
       </CardContent>
     </Card>
   );

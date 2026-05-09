@@ -1,8 +1,10 @@
+import asyncio
 from typing import List
 
 from app.models import EmailResult, GmailCredentials, ProcessRequest
 from app.services.agent_core import create_inbox_agent
 from app.services.auth import SessionData, get_current_session
+from app.services.demo_data import get_demo_results
 from app.services.google_utils import fetch_unread_emails, get_calendar_service, get_gmail_service
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -33,6 +35,10 @@ async def process_inbox(
 
     Auth: requires a valid session cookie minted by /auth/callback.
     """
+    if session.is_demo:
+        await asyncio.sleep(0.8)
+        return get_demo_results(request.max_results)
+
     creds = _credentials_from_session(session)
     await check_usage_limit(session.email, request.max_results)
 
