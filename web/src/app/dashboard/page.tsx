@@ -15,6 +15,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ApiError, api } from "@/lib/api";
 import { useUser } from "@/lib/useUser";
 
@@ -32,6 +38,18 @@ const CATEGORY_VARIANT: Record<string, "default" | "secondary" | "destructive"> 
   fyi: "secondary",
   spam: "destructive",
 };
+
+function HoverText({ text, clamp }: { text: string; clamp: 1 | 2 }) {
+  const clampClass = clamp === 1 ? "truncate" : "line-clamp-2";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={`block cursor-default ${clampClass}`}>{text}</span>
+      </TooltipTrigger>
+      <TooltipContent>{text}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -93,6 +111,9 @@ export default function DashboardPage() {
         <header className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">⚡ Inbox Zero Agent</h1>
           <div className="flex items-center gap-4">
+            {user.is_demo ? (
+              <Badge variant="secondary">Demo mode</Badge>
+            ) : null}
             <span className="text-sm text-muted-foreground">{user.email}</span>
             <Button variant="outline" onClick={logout}>
               Logout
@@ -154,46 +175,48 @@ export default function DashboardPage() {
                   Inbox is already Zero! 🎉
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Subject</TableHead>
-                      <TableHead>From</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Summary</TableHead>
-                      <TableHead>Calendar</TableHead>
-                      <TableHead>Draft</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {results.map((r, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="max-w-xs truncate">
-                          {r.subject}
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate">
-                          {r.sender}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={CATEGORY_VARIANT[r.category] ?? "secondary"}
-                          >
-                            {r.category}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-md text-sm">
-                          {r.summary}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {r.calendar_status ?? "—"}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {r.draft_id ? "✓" : "—"}
-                        </TableCell>
+                <TooltipProvider delayDuration={150}>
+                  <Table className="table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[20%]">Subject</TableHead>
+                        <TableHead className="w-[16%]">From</TableHead>
+                        <TableHead className="w-[8%]">Category</TableHead>
+                        <TableHead className="w-[34%]">Summary</TableHead>
+                        <TableHead className="w-[16%]">Calendar</TableHead>
+                        <TableHead className="w-[6%]">Draft</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {results.map((r, i) => (
+                        <TableRow key={i}>
+                          <TableCell>
+                            <HoverText text={r.subject} clamp={1} />
+                          </TableCell>
+                          <TableCell>
+                            <HoverText text={r.sender} clamp={1} />
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={CATEGORY_VARIANT[r.category] ?? "secondary"}
+                            >
+                              {r.category}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            <HoverText text={r.summary} clamp={2} />
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            <HoverText text={r.calendar_status ?? "—"} clamp={2} />
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {r.draft_id ? "✓" : "—"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TooltipProvider>
               )}
             </CardContent>
           </Card>

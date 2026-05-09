@@ -99,6 +99,35 @@ def auth_callback(
     return resp
 
 
+@router.get("/demo-login")
+def auth_demo_login() -> RedirectResponse:
+    """Mint a demo session — no Google OAuth required.
+
+    Lets reviewers exercise the full UI without granting access to a real
+    Gmail account. The session is flagged is_demo=True; protected endpoints
+    serve fixture data instead of hitting Google APIs.
+    """
+    session = SessionData(
+        email="demo@inboxzero.dev",
+        token="demo",
+        refresh_token=None,
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=["demo"],
+        is_demo=True,
+    )
+    jwt_token = sign_session(session)
+    resp = RedirectResponse(f"{frontend_url()}/dashboard", status_code=status.HTTP_302_FOUND)
+    resp.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=jwt_token,
+        httponly=True,
+        samesite="lax",
+        max_age=SESSION_TTL_SECONDS,
+        path="/",
+    )
+    return resp
+
+
 @router.post("/logout")
 def auth_logout() -> Response:
     resp = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -108,4 +137,8 @@ def auth_logout() -> Response:
 
 @router.get("/me")
 def auth_me(session: SessionData = Depends(get_current_session)) -> JSONResponse:
-    return JSONResponse({"email": session.email, "scopes": session.scopes})
+    return JSONResponse({
+        "email": session.email,
+        "scopes": session.scopes,
+        "is_demo": session.is_demo,
+    })

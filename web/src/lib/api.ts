@@ -42,3 +42,4 @@ export async function api<T>(
 }
 
 export const loginUrl = () => `${BACKEND_URL}/auth/login`;
+export const demoLoginUrl = () => `${BACKEND_URL}/auth/demo-login`;

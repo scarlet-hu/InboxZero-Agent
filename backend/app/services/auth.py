@@ -176,6 +176,7 @@ class SessionData:
     refresh_token: str | None
     token_uri: str
     scopes: list[str]
+    is_demo: bool = False
 
 
 def sign_session(session: SessionData) -> str:
@@ -185,6 +186,7 @@ def sign_session(session: SessionData) -> str:
         "refresh_token": session.refresh_token,
         "token_uri": session.token_uri,
         "scopes": session.scopes,
+        "is_demo": session.is_demo,
         "exp": int(time.time()) + SESSION_TTL_SECONDS,
     }
     return jwt.encode(payload, _session_secret(), algorithm="HS256")
@@ -201,6 +203,7 @@ def verify_session(token: str) -> SessionData | None:
         refresh_token=payload.get("refresh_token"),
         token_uri=payload["token_uri"],
         scopes=payload.get("scopes", []),
+        is_demo=payload.get("is_demo", False),
     )
 
 

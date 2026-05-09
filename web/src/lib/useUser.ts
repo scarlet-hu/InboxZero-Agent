@@ -7,6 +7,7 @@ import { ApiError, api } from "./api";
 export interface User {
   email: string;
   scopes: string[];
+  is_demo?: boolean;
 }
 
 export function useUser() {
