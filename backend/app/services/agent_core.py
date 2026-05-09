@@ -11,13 +11,71 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # AI & Graph Libraries
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 
 # Initialize Gemini (Global instance is fine, as API key is usually env-based)
 # Ensure GOOGLE_API_KEY is set in your .env
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+
+# --- PROMPTS ---
+# Only the system message is templated. User-supplied content (email body, sender,
+# subject) is passed as a raw HumanMessage so that `{...}` inside emails is not
+# interpreted as a template variable.
+
+CATEGORIZE_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "You are an AI Executive Assistant. Classify the email into EXACTLY ONE category.\n\n"
+     "DECISION ORDER (apply in this order — first match wins):\n"
+     "  1. Check SPAM signals first.\n"
+     "  2. If not spam, check ACTION (does a real human want a written reply from you?).\n"
+     "  3. Otherwise it is FYI.\n\n"
+     "**spam**: Unwanted, fraudulent, or cold unsolicited emails. SPAM OVERRIDES the 'automated → fyi' rule.\n"
+     "  Strong spam signals (any one is enough):\n"
+     "  - Lottery/prize/inheritance winnings, requests for bank or wallet details\n"
+     "  - Phishing: 'verify your account', 'unusual sign-in — click here', urgent account suspension threats from suspicious or look-alike domains (e.g., b4nk.com, paypa1.com)\n"
+     "  - Gift card / wire transfer / 'urgent favor' requests, especially from unknown or impersonated senders\n"
+     "  - Unsolicited cold sales / lead-gen outreach from senders with no prior relationship (SEO services, generic 'boost your business' pitches)\n"
+     "  - Unsolicited pharma, gambling, get-rich-quick, or adult-content promotions\n"
+     "  - Mismatched sender domain vs claimed identity, or obvious typos/grammar of a scam\n\n"
+     "**action**: Real-person emails that REQUIRE a written email reply from you.\n"
+     "  - Direct questions from a real human asking for your input, decision, approval, or confirmation\n"
+     "  - Meeting requests, scheduling proposals, or appointment confirmations from a known/legitimate sender\n"
+     "  - Tasks, deliverables, or reviews explicitly assigned to you by a manager, client, or colleague\n"
+     "  - Personal invites from friends/colleagues that need an RSVP\n"
+     "  Note: A legitimate human asking you to confirm an appointment IS action, even if the topic looks routine.\n\n"
+     "**fyi**: Legitimate informational emails that do NOT need a written reply.\n"
+     "  - Automated emails from real services you use (GitHub, Uber, Atlassian, Stripe, AWS, Google, Figma, Notion, LinkedIn, CI systems, etc.)\n"
+     "  - Receipts, shipping notices, invoices, renewal reminders, calendar reminders\n"
+     "  - Security alerts and account notifications from LEGITIMATE providers (even if they say 'action required' — the action is clicking a link, not replying)\n"
+     "  - Newsletters, digests, product update announcements, marketing from services you've signed up for\n"
+     "  - Status updates or incident notifications you're informed of but not asked to act on\n"
+     "  - Anything where the only 'action' is clicking a link/button, not composing a reply\n\n"
+     "TIE-BREAKERS:\n"
+     "  - Automated + from a recognized legitimate service → fyi.\n"
+     "  - Automated + scammy signals (suspicious domain, unrealistic offer, credential request) → spam.\n"
+     "  - Human-sent + asks a question or requires a reply → action, even on routine topics.\n\n"
+     'Return ONLY valid JSON, no markdown: {{"category": "action|fyi|spam", "summary": "brief summary"}}'
+    ),
+])
+
+CALENDAR_DATE_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "Identify if this email suggests a meeting date. Today is {today}. "
+     "Return start/end in ISO 8601. If none, return null.\n"
+     'Return ONLY valid JSON with no markdown: {{"start": "...", "end": "..."}}'
+    ),
+])
+
+DRAFT_REPLY_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "Write a professional, brief email reply. "
+     "Context: {category}. Calendar: {calendar_status}. "
+     'Return ONLY valid JSON with no markdown: {{"subject": "...", "body": "..."}}'
+    ),
+])
 
 # --- 1. STATE DEFINITION ---
 
@@ -39,43 +97,18 @@ class AgentState(TypedDict):
 def categorize_logic(state: AgentState):
     """Analyzes the email content to determine category and summary."""
     print(f"🧐 Analyzing: {state['subject'][:40]}...")
-    prompt = (
-        "You are an AI Executive Assistant. Classify the email into EXACTLY ONE category.\n\n"
-        "DECISION ORDER (apply in this order — first match wins):\n"
-        "  1. Check SPAM signals first.\n"
-        "  2. If not spam, check ACTION (does a real human want a written reply from you?).\n"
-        "  3. Otherwise it is FYI.\n\n"
-        "**spam**: Unwanted, fraudulent, or cold unsolicited emails. SPAM OVERRIDES the 'automated → fyi' rule.\n"
-        "  Strong spam signals (any one is enough):\n"
-        "  - Lottery/prize/inheritance winnings, requests for bank or wallet details\n"
-        "  - Phishing: 'verify your account', 'unusual sign-in — click here', urgent account suspension threats from suspicious or look-alike domains (e.g., b4nk.com, paypa1.com)\n"
-        "  - Gift card / wire transfer / 'urgent favor' requests, especially from unknown or impersonated senders\n"
-        "  - Unsolicited cold sales / lead-gen outreach from senders with no prior relationship (SEO services, generic 'boost your business' pitches)\n"
-        "  - Unsolicited pharma, gambling, get-rich-quick, or adult-content promotions\n"
-        "  - Mismatched sender domain vs claimed identity, or obvious typos/grammar of a scam\n\n"
-        "**action**: Real-person emails that REQUIRE a written email reply from you.\n"
-        "  - Direct questions from a real human asking for your input, decision, approval, or confirmation\n"
-        "  - Meeting requests, scheduling proposals, or appointment confirmations from a known/legitimate sender\n"
-        "  - Tasks, deliverables, or reviews explicitly assigned to you by a manager, client, or colleague\n"
-        "  - Personal invites from friends/colleagues that need an RSVP\n"
-        "  Note: A legitimate human asking you to confirm an appointment IS action, even if the topic looks routine.\n\n"
-        "**fyi**: Legitimate informational emails that do NOT need a written reply.\n"
-        "  - Automated emails from real services you use (GitHub, Uber, Atlassian, Stripe, AWS, Google, Figma, Notion, LinkedIn, CI systems, etc.)\n"
-        "  - Receipts, shipping notices, invoices, renewal reminders, calendar reminders\n"
-        "  - Security alerts and account notifications from LEGITIMATE providers (even if they say 'action required' — the action is clicking a link, not replying)\n"
-        "  - Newsletters, digests, product update announcements, marketing from services you've signed up for\n"
-        "  - Status updates or incident notifications you're informed of but not asked to act on\n"
-        "  - Anything where the only 'action' is clicking a link/button, not composing a reply\n\n"
-        "TIE-BREAKERS:\n"
-        "  - Automated + from a recognized legitimate service → fyi.\n"
-        "  - Automated + scammy signals (suspicious domain, unrealistic offer, credential request) → spam.\n"
-        "  - Human-sent + asks a question or requires a reply → action, even on routine topics.\n\n"
-        "Return ONLY valid JSON, no markdown: {\"category\": \"action|fyi|spam\", \"summary\": \"brief summary\"}"
+    user_content = (
+        f"From: {state['sender']}\n"
+        f"Subject: {state['subject']}\n"
+        f"Content: {state['email_content']}"
     )
-    user_msg = f"From: {state['sender']}\nSubject: {state['subject']}\nContent: {state['email_content']}"
+    messages = [
+        *CATEGORIZE_PROMPT.format_messages(),
+        HumanMessage(content=user_content),
+    ]
 
     try:
-        response = llm.invoke([SystemMessage(content=prompt), HumanMessage(content=user_msg)])
+        response = llm.invoke(messages)
         # Clean potential markdown
         content = response.content.replace("```json", "").replace("```", "").strip()
         data = json.loads(content)
@@ -88,14 +121,13 @@ def calendar_check_logic(state: AgentState, calendar_service: Any):
     print("🗓️  Checking calendar for context...")
 
     # 1. Extract Date
-    date_prompt = (
-        f"Identify if this email suggests a meeting date. Today is {datetime.now().isoformat()}. "
-        "Return start/end in ISO 8601. If none, return null.\n"
-        "Return ONLY valid JSON with no markdown: {\"subject\": \"...\", \"body\": \"...\"}"
-    )
+    messages = [
+        *CALENDAR_DATE_PROMPT.format_messages(today=datetime.now().isoformat()),
+        HumanMessage(content=state['email_content']),
+    ]
 
     try:
-        response = llm.invoke([SystemMessage(content=date_prompt), HumanMessage(content=state['email_content'])])
+        response = llm.invoke(messages)
         content = response.content.replace("```json", "").replace("```", "").strip()
         time_data = json.loads(content)
     except Exception:
@@ -138,14 +170,16 @@ def draft_reply_logic(state: AgentState, gmail_service: Any):
         print(f"Draft check warning: {e}")
 
     # Generate Content
-    reply_prompt = (
-        "Write a professional, brief email reply. "
-        f"Context: {state['category']}. Calendar: {state['calendar_status'] or 'N/A'}. "
-        "JSON: {\"subject\": \"...\", \"body\": \"...\"}"
-    )
+    messages = [
+        *DRAFT_REPLY_PROMPT.format_messages(
+            category=state['category'],
+            calendar_status=state['calendar_status'] or 'N/A',
+        ),
+        HumanMessage(content=state['email_content']),
+    ]
 
     try:
-        response = llm.invoke([SystemMessage(content=reply_prompt), HumanMessage(content=state['email_content'])])
+        response = llm.invoke(messages)
         content = response.content.replace("```json", "").replace("```", "").strip()
         draft_content = json.loads(content)
     except Exception:
