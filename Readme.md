@@ -56,7 +56,7 @@ InboxZero exposes Gmail and Calendar tools as an **MCP server**, enabling direct
 
 **Core Flow:**
 1. **Fetch** → Retrieve unread emails via Gmail API
-2. **Categorize** → ReAct Agent analyzes and classifies emails (action/fyi/spam)
+2. **Categorize** → LangGraph state-machine agent analyzes and classifies emails (action/fyi/spam)
 3. **Context** → Calendar API checks for scheduling conflicts
 4. **Draft** → AI generates response drafts for actionable emails
 5. **Review** → Human approves, edits, or discards drafts
@@ -99,7 +99,7 @@ InboxZero exposes Gmail and Calendar tools as an **MCP server**, enabling direct
 - [x] **Draft Generation** - AI-drafted responses for action items
 - [x] **Human Review Interface** - Next.js dashboard for approving/editing drafts
 - [x] **Usage Tracking** - Per-user email processing limits
-- [x] **ReAct Agent Workflow** - State-based email processing pipeline
+- [x] **LangGraph State-Machine Agent** - Typed `AgentState` + conditional routing pipeline (see [docs/react-vs-state-machine.md](docs/react-vs-state-machine.md) for why this won over a ReAct alternative)
 
 ### 🚧 Work in Progress (WIP)
 - [ ] **Auto-send Mode** - Option to send low-risk emails without review
@@ -135,7 +135,8 @@ InboxZeroAgent/
 │   │   │   └── endpoints.py     # /agent/process, /agent/usage
 │   │   └── services/
 │   │       ├── auth.py          # OAuth flow, PKCE, JWT session
-│   │       ├── agent_core.py    # LangGraph ReAct agent
+│   │       ├── agent_core.py    # LangGraph state-machine agent (production)
+│   │       ├── agent_core_react.py  # ReAct alternative — see docs/react-vs-state-machine.md
 │   │       └── google_utils.py  # Gmail/Calendar API wrappers
 │   ├── credentials.json         # Google OAuth client secrets
 │   └── requirements.txt
@@ -228,9 +229,15 @@ cd web && npm install && npm run dev
 
 ## 🧠 How It Works
 
-### ReAct Agent Workflow (LangGraph)
+### LangGraph State-Machine Agent
 
-The agent uses a state machine with the following nodes:
+The agent is a deterministic state machine — classification routes each email
+through a fixed graph rather than letting the LLM choose tools at runtime.
+A ReAct alternative (`agent_core_react.py`) was prototyped and benchmarked;
+see [docs/react-vs-state-machine.md](docs/react-vs-state-machine.md) for the
+token-cost data and rationale for keeping the state machine in production.
+
+Nodes and state:
 
 ```python
 State: AgentState
