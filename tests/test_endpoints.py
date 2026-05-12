@@ -282,3 +282,98 @@ def test_get_draft_in_demo_mode_404_for_unknown_id(client):
         cookies={SESSION_COOKIE_NAME: demo_token},
     )
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Demo-mode + error-mapping coverage for the remaining draft endpoints
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def demo_cookies():
+    token = sign_session(SessionData(
+        email="demo@inboxzero.dev",
+        token="demo",
+        refresh_token=None,
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=["demo"],
+        is_demo=True,
+    ))
+    return {SESSION_COOKIE_NAME: token}
+
+
+def test_process_in_demo_mode_returns_fixtures(client, demo_cookies, monkeypatch):
+    # Skip the 0.8s sleep so the test stays fast.
+    async def _instant(_seconds):
+        return None
+
+    monkeypatch.setattr("app.api.endpoints.asyncio.sleep", _instant)
+
+    resp = client.post(
+        "/agent/process",
+        json={"max_results": 3},
+        cookies=demo_cookies,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) <= 3
+    # Demo data ships pre-populated EmailResult fixtures.
+    assert all("category" in item for item in body)
+
+
+@patch("app.api.endpoints.fetch_unread_emails")
+@patch("app.api.endpoints.get_calendar_service")
+@patch("app.api.endpoints.get_gmail_service")
+def test_process_propagates_inner_http_exception(
+    gmail, calendar, fetch, client, auth_cookies
+):
+    """An HTTPException raised inside the try block should pass through untouched."""
+    from fastapi import HTTPException
+
+    gmail.return_value = MagicMock()
+    calendar.return_value = MagicMock()
+    fetch.side_effect = HTTPException(status_code=507, detail="forced")
+
+    resp = client.post(
+        "/agent/process",
+        json={"max_results": 5},
+        cookies=auth_cookies,
+    )
+    assert resp.status_code == 507
+    assert resp.json()["detail"] == "forced"
+
+
+# --- update_draft ---
+
+@patch("app.api.endpoints.update_draft_content", side_effect=_gmail_http_error(404))
+@patch("app.api.endpoints.get_gmail_service")
+def test_update_draft_404_when_gmail_404s(gmail, update, client, auth_cookies):
+    gmail.return_value = MagicMock()
+    resp = client.put(
+        "/agent/drafts/missing",
+        json={"subject": "x", "body": "y"},
+        cookies=auth_cookies,
+    )
+    assert resp.status_code == 404
+
+
+# --- send_draft ---
+
+@patch("app.api.endpoints.send_draft", side_effect=_gmail_http_error(403))
+@patch("app.api.endpoints.get_gmail_service")
+def test_send_draft_403_when_gmail_rejects(gmail, send, client, auth_cookies):
+    gmail.return_value = MagicMock()
+    resp = client.post("/agent/drafts/draft-1/send", cookies=auth_cookies)
+    assert resp.status_code == 403
+    assert "rejected" in resp.json()["detail"].lower()
+
+
+# --- discard_draft ---
+
+@patch("app.api.endpoints.discard_draft", side_effect=_gmail_http_error(500))
+@patch("app.api.endpoints.get_gmail_service")
+def test_discard_draft_502_on_other_gmail_error(gmail, discard, client, auth_cookies):
+    """Non-404 / non-auth Gmail errors map to 502."""
+    gmail.return_value = MagicMock()
+    resp = client.delete("/agent/drafts/draft-1", cookies=auth_cookies)
+    assert resp.status_code == 502
+    assert "Gmail API error" in resp.json()["detail"]

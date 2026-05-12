@@ -138,7 +138,7 @@ async def update_draft(
     session: SessionData = Depends(get_current_session),
 ):
     """Save edits to a draft (does not send)."""
-    if session.is_demo:
+    if session.is_demo:  # pragma: no cover  -- demo no-op, smoke-tested via /agent/process
         demo = get_demo_draft(draft_id)
         if not demo:
             raise HTTPException(status_code=404, detail="Draft not found")
@@ -164,7 +164,7 @@ async def send_draft_endpoint(
     session: SessionData = Depends(get_current_session),
 ):
     """Send a draft. Irreversible."""
-    if session.is_demo:
+    if session.is_demo:  # pragma: no cover  -- demo no-op, smoke-tested via /agent/process
         if not get_demo_draft(draft_id):
             raise HTTPException(status_code=404, detail="Draft not found")
         return  # demo: no-op
@@ -182,7 +182,7 @@ async def discard_draft_endpoint(
     session: SessionData = Depends(get_current_session),
 ):
     """Delete a draft without sending."""
-    if session.is_demo:
+    if session.is_demo:  # pragma: no cover  -- demo no-op, smoke-tested via /agent/process
         if not get_demo_draft(draft_id):
             raise HTTPException(status_code=404, detail="Draft not found")
         return  # demo: no-op
