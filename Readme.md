@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/scarlet-hu/InboxZero-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/scarlet-hu/InboxZero-Agent/actions/workflows/ci.yml)
 
-> 🇬🇧 English version: [Readme.en.md](Readme.en.md)
+> En: [Readme.en.md](Readme.en.md)
 
 🚀 **在线演示：** https://inboxzero-frontend.fly.dev/
 > ⚠️ Backend 配置了 Fly.io `auto_stop_machines = 'stop'` 实现闲置零成本——空闲一段时间后的第一个请求会花 ~5–6 秒唤醒机器，后续请求恢复正常速度。
