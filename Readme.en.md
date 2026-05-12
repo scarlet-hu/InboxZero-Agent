@@ -1,4 +1,4 @@
-# Inbox Zero Agent (Human-in-the-Loop)
+# Inbox Zero Agent
 
 [![CI](https://github.com/scarlet-hu/InboxZero-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/scarlet-hu/InboxZero-Agent/actions/workflows/ci.yml)
 
@@ -16,8 +16,10 @@ An intelligent email management system that uses AI to categorize, summarize, an
 │  Next.js (port 3000) │         │  FastAPI (port 8000)     │
 │  - / login page      │ ──────▶ │  /auth/login → Google    │
 │  - /dashboard        │ cookie  │  /auth/callback → JWT    │
-│  - shadcn/ui + SWR   │ ◀────── │  /auth/me, /auth/logout  │
+│  - shadcn/ui + SWR   │ ◀────── │  /auth/demo-login        │
+│                      │         │  /auth/me, /auth/logout  │
 │                      │         │  /agent/process, /usage  │
+│                      │         │  /agent/drafts/{id}      │
 └──────────────────────┘         └──────────┬───────────────┘
                                             │
                                             ▼
@@ -99,30 +101,73 @@ InboxZero exposes Gmail and Calendar tools as an **MCP server**, enabling direct
 - [x] **Smart Summarization** - Concise AI-generated email summaries
 - [x] **Calendar Integration** - Automatic scheduling conflict detection
 - [x] **Draft Generation** - AI-drafted responses for action items
-- [x] **Human Review Interface** - Next.js dashboard for approving / editing / discarding agent-generated drafts before send (review-approve HITL — the agent runs to completion with `no-auto-send`; the dashboard proxies edits/sends/discards to the Gmail API). This is *not* strict workflow-interrupt HITL — see [docs/hitl-strong-design.md](docs/hitl-strong-design.md) for the planned `LangGraph interrupt + checkpointer` variant where the workflow itself pauses mid-graph.
+- [x] **Human Review Interface (review-approve HITL)** - Next.js dashboard
+  exposes four actions, each backed by a dedicated endpoint:
+  - **View draft** — `GET /agent/drafts/{id}` — fetch draft body for editing
+  - **Save edits** — `PUT /agent/drafts/{id}` — update subject/body while
+    preserving `In-Reply-To` / `References` headers (keeps the reply threaded)
+  - **Approve and send** — `POST /agent/drafts/{id}/send` — irreversible
+  - **Discard** — `DELETE /agent/drafts/{id}` — drop the draft without sending
+
+  The agent runs to completion in `no-auto-send` mode (drafts land in Gmail
+  Drafts); the dashboard proxies every human action to the Gmail API.
+  This is *not* strict workflow-interrupt HITL — see
+  [docs/hitl-strong-design.md](docs/hitl-strong-design.md) for the planned
+  `LangGraph interrupt + checkpointer` variant where the workflow itself
+  pauses mid-graph.
 - [x] **Usage Tracking** - Per-user email processing limits
 - [x] **LangGraph State-Machine Agent** - Typed `AgentState` + conditional routing pipeline (see [docs/react-vs-state-machine.md](docs/react-vs-state-machine.md) for why this won over a ReAct alternative)
 
-### 🚧 Work in Progress (WIP)
-- [ ] **Auto-send Mode** - Option to send low-risk emails without review
-- [ ] **Custom Categories** - User-defined email classification rules
-- [ ] **Response Templates** - Reusable reply templates
-- [ ] **Email Threading** - Conversation context for better drafts
-- [ ] **Database Integration** - Persistent usage tracking and history
-- [ ] **Batch Processing** - Queue management for large inboxes
-- [ ] **Analytics Dashboard** - Email processing statistics
-- [ ] **Multi-language Support** - Non-English email handling
-- [ ] **GCP Deployment** - Production deployment on Google Cloud Platform
+### 🐞 Known Issues
 
-### 📋 Backlog/To-Do
-- [ ] **Priority Scoring** - Urgent email detection
-- [ ] **Attachment Handling** - Parse and respond to attachments
-- [ ] **Meeting Scheduler** - Propose meeting times based on availability
-- [ ] **Email Search** - Search through processed emails
-- [ ] **Webhooks** - Real-time email processing triggers
-- [ ] **Browser Extension** - Quick actions from Gmail UI
-- [ ] **Mobile App** - iOS/Android review interface
-- [ ] **Team Mode** - Shared inbox management
+- [ ] **MCP server is decoupled from the web login flow** —
+  `backend/mcp_server.py:_load_creds()` reads `token.json` from the project
+  root, but the current web login flow writes credentials into a JWT
+  session cookie and **does not produce `token.json`**. MCP clients
+  (Claude Desktop / Cursor) therefore need a separate one-off OAuth bootstrap
+  to create `token.json`, otherwise they hit `FileNotFoundError`.
+  Planned fix: share FastAPI session auth, or write `token.json` after
+  a successful login as a side effect.
+- [ ] **bare-except in `agent_core.py`** — the categorize node uses
+  `except Exception` to silently masquerade Gemini 429 / JSON-parse errors as
+  a `category="fyi"` fallback. The eval runner detects this via a
+  `"Error parsing:"` summary prefix (which keeps eval results honest), but
+  the underlying bug still lives in production code. Planned replacement:
+  specific exceptions + `tenacity` exponential backoff + a 30s LLM timeout.
+
+### 🚧 Roadmap
+
+**P1**
+
+- [ ] **LangSmith / Langfuse observability** — add tracing + token-cost
+  tracking; replace `print` debugging with structured logs.
+- [ ] **PostgreSQL persistence** — SQLAlchemy + Alembic; tables: `users`,
+  `processed_emails` (dedup), `usage_log` (replaces the mock
+  `check_usage_limit` in `endpoints.py:14`), `feedback` (user edits to drafts).
+- [ ] **Async batch processing** — `endpoints.py:55` is a serial `for` loop
+  today; switch to `asyncio.gather` or LangGraph's batch API to cut latency
+  on long inboxes.
+- [ ] **Structured error handling** — see the Known Issues above; add a 30s
+  LLM timeout.
+
+**P2**
+
+- [ ] **Feedback loop / self-improving** — use user-edited drafts as
+  in-context few-shot examples to lift downstream draft acceptance rate.
+- [ ] **RAG over email history** — pgvector for semantic retrieval of past
+  similar emails when drafting replies.
+- [ ] **Strong HITL** — adopt `LangGraph interrupt + checkpointer` so the
+  workflow itself **pauses** on low-confidence classifications and only
+  drafts after a human confirms. Full design in
+  [docs/hitl-strong-design.md](docs/hitl-strong-design.md).
+
+### 🧹 Cleanup
+
+- [ ] Remove the unused `langchain-anthropic` from `requirements.txt`
+- [ ] Upgrade `requirements.txt` to `pyproject.toml` + lock file (uv / poetry)
+- [ ] Promote the ASCII architecture diagram to mermaid
+- [ ] Audit git history to confirm `token.json` never landed in a commit
+  (`.gitignore` already covers it, but history needs verification)
 
 ## 📁 Project Structure
 
@@ -253,29 +298,30 @@ State: AgentState
 └── draft_id: Optional[str]
 
 Nodes:
-1. categorize_logic    → Analyze email with Gemini LLM
-2. calendar_check_logic → Check for scheduling conflicts
-3. draft_reply_logic   → Generate response for "action" emails
-4. archive_logic       → Mark "fyi" emails as read
+1. categorize_logic     → Analyze and classify the email with Gemini LLM
+2. calendar_check_logic → Check for scheduling conflicts (action only)
+3. draft_reply_logic    → Generate draft and push to Gmail Drafts (action only)
 ```
 
 **Decision Flow:**
-- `spam` → Archive immediately
-- `fyi` → Summarize + Archive
-- `action` → Summarize + Calendar Check + Draft Response
+- `spam`   → Straight to `END` (no archive — user handles it in Gmail)
+- `fyi`    → Straight to `END` (user handles it in Gmail)
+- `action` → `check_calendar` → `draft_reply` → `END`
 
 ### API Endpoints
 
-#### `POST /agent/process`
-Process unread emails from Gmail inbox.
+> **Auth:** all `/agent/*` endpoints depend on the `session` cookie (a JWT set
+> by `/auth/callback` after a successful login; `HttpOnly` + `SameSite=None`
+> for cross-domain production). The backend decodes it automatically via the
+> `get_current_session` FastAPI dependency — no header or body field carries
+> credentials. Unauthenticated requests return 401.
 
-**Headers:**
-- `X-User-Id`: User identifier
+#### `POST /agent/process`
+Run the full LangGraph pipeline over unread Gmail emails.
 
 **Request Body:**
 ```json
 {
-  "credentials": "<base64_oauth_token>",
   "max_results": 10
 }
 ```
@@ -295,7 +341,51 @@ Process unread emails from Gmail inbox.
 ```
 
 #### `GET /agent/usage`
-Get user's daily processing limits.
+Get the user's daily processing limit.
+
+#### Draft Review Endpoints (review-approve HITL)
+
+Four endpoints, one per dashboard action (view / edit / send / discard).
+Gmail API errors are mapped to HTTP status codes uniformly:
+**404 → draft not found; 401/403 → Gmail rejected the request; otherwise → 502**.
+
+##### `GET /agent/drafts/{draft_id}`
+Read the editable fields of a draft.
+
+**Response:**
+```json
+{
+  "draft_id": "r-123456789",
+  "to": "colleague@company.com",
+  "subject": "Re: Project Meeting Request",
+  "body": "Hi, ..."
+}
+```
+
+##### `PUT /agent/drafts/{draft_id}`
+Save edits to a draft (**does not send**). The update preserves the original
+`In-Reply-To` / `References` headers so the reply stays in the right thread.
+
+**Request Body:**
+```json
+{
+  "subject": "Re: Project Meeting Request",
+  "body": "Hi, thanks for your message..."
+}
+```
+
+**Response:** same shape as `GET /agent/drafts/{draft_id}` (returns the
+saved state).
+
+##### `POST /agent/drafts/{draft_id}/send`
+**Irreversible**: send the draft through the Gmail API.
+
+**Response:** `204 No Content`.
+
+##### `DELETE /agent/drafts/{draft_id}`
+Discard the draft (deleted from Gmail Drafts) without sending.
+
+**Response:** `204 No Content`.
 
 ## 🧪 Evaluation
 
