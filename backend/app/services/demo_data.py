@@ -117,3 +117,20 @@ _DEMO_EMAILS: list[EmailResult] = [
 
 def get_demo_results(max_results: int) -> list[EmailResult]:
     return _DEMO_EMAILS[: max(0, max_results)]
+
+
+def get_demo_draft(draft_id: str) -> dict | None:
+    """Return a synthesized draft body matching the demo email summary, or None."""
+    for email in _DEMO_EMAILS:
+        if email.draft_id == draft_id:
+            return {
+                "draft_id": draft_id,
+                "to": email.sender,
+                "subject": f"Re: {email.subject}",
+                "body": (
+                    f"(Demo reply — synthesized from agent summary)\n\n"
+                    f"Hi,\n\nThanks for your message. {email.summary}\n\n"
+                    f"I'll follow up shortly with next steps.\n\nBest,\nDemo User"
+                ),
+            }
+    return None

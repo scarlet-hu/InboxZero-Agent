@@ -11,6 +11,14 @@ import pytest
 from app.main import app
 from app.services.auth import SESSION_COOKIE_NAME, SessionData, sign_session
 from fastapi.testclient import TestClient
+from googleapiclient.errors import HttpError
+
+
+def _gmail_http_error(status: int) -> HttpError:
+    resp = MagicMock()
+    resp.status = status
+    resp.reason = "Mocked"
+    return HttpError(resp, b"{}")
 
 
 def _session_cookie() -> dict[str, str]:
@@ -151,3 +159,126 @@ def test_process_rejects_tampered_cookie(client):
         cookies={SESSION_COOKIE_NAME: "not.a.jwt"},
     )
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# /agent/drafts/* — review-approve HITL surface
+# ---------------------------------------------------------------------------
+
+_DRAFT_PAYLOAD = {
+    "draft_id": "draft-1",
+    "to": "alice@example.com",
+    "subject": "Re: Lunch?",
+    "body": "Sounds good — see you at noon.",
+}
+
+
+def test_get_draft_requires_auth(client):
+    resp = client.get("/agent/drafts/draft-1")
+    assert resp.status_code == 401
+
+
+@patch("app.api.endpoints.read_draft_content", return_value=_DRAFT_PAYLOAD)
+@patch("app.api.endpoints.get_gmail_service")
+def test_get_draft_returns_content(gmail, read, client, auth_cookies):
+    gmail.return_value = MagicMock()
+    resp = client.get("/agent/drafts/draft-1", cookies=auth_cookies)
+    assert resp.status_code == 200
+    assert resp.json() == _DRAFT_PAYLOAD
+    read.assert_called_once()
+
+
+@patch("app.api.endpoints.read_draft_content", side_effect=_gmail_http_error(404))
+@patch("app.api.endpoints.get_gmail_service")
+def test_get_draft_404_when_gmail_404s(gmail, read, client, auth_cookies):
+    gmail.return_value = MagicMock()
+    resp = client.get("/agent/drafts/missing", cookies=auth_cookies)
+    assert resp.status_code == 404
+
+
+@patch("app.api.endpoints.read_draft_content")
+@patch("app.api.endpoints.update_draft_content")
+@patch("app.api.endpoints.get_gmail_service")
+def test_update_draft_saves_and_returns_fresh_content(
+    gmail, update, read, client, auth_cookies
+):
+    gmail.return_value = MagicMock()
+    updated = {**_DRAFT_PAYLOAD, "subject": "Edited", "body": "Edited body"}
+    read.return_value = updated
+
+    resp = client.put(
+        "/agent/drafts/draft-1",
+        json={"subject": "Edited", "body": "Edited body"},
+        cookies=auth_cookies,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == updated
+    update.assert_called_once()
+    args = update.call_args.args
+    assert args[1] == "draft-1"
+    assert args[2] == "Edited"
+    assert args[3] == "Edited body"
+
+
+@patch("app.api.endpoints.send_draft")
+@patch("app.api.endpoints.get_gmail_service")
+def test_send_draft_returns_204(gmail, send, client, auth_cookies):
+    gmail.return_value = MagicMock()
+    resp = client.post("/agent/drafts/draft-1/send", cookies=auth_cookies)
+    assert resp.status_code == 204
+    send.assert_called_once()
+
+
+@patch("app.api.endpoints.send_draft", side_effect=_gmail_http_error(404))
+@patch("app.api.endpoints.get_gmail_service")
+def test_send_draft_404_when_gmail_404s(gmail, send, client, auth_cookies):
+    gmail.return_value = MagicMock()
+    resp = client.post("/agent/drafts/missing/send", cookies=auth_cookies)
+    assert resp.status_code == 404
+
+
+@patch("app.api.endpoints.discard_draft")
+@patch("app.api.endpoints.get_gmail_service")
+def test_discard_draft_returns_204(gmail, discard, client, auth_cookies):
+    gmail.return_value = MagicMock()
+    resp = client.delete("/agent/drafts/draft-1", cookies=auth_cookies)
+    assert resp.status_code == 204
+    discard.assert_called_once()
+
+
+def test_get_draft_in_demo_mode_returns_fixture(client):
+    """Demo session: no Gmail call, returns a synthesized fixture draft."""
+    demo_token = sign_session(SessionData(
+        email="demo@inboxzero.dev",
+        token="demo",
+        refresh_token=None,
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=["demo"],
+        is_demo=True,
+    ))
+    resp = client.get(
+        "/agent/drafts/demo-draft-001",
+        cookies={SESSION_COOKIE_NAME: demo_token},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["draft_id"] == "demo-draft-001"
+    assert body["subject"].startswith("Re:")
+    assert body["body"]  # non-empty
+
+
+def test_get_draft_in_demo_mode_404_for_unknown_id(client):
+    demo_token = sign_session(SessionData(
+        email="demo@inboxzero.dev",
+        token="demo",
+        refresh_token=None,
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=["demo"],
+        is_demo=True,
+    ))
+    resp = client.get(
+        "/agent/drafts/nonexistent",
+        cookies={SESSION_COOKIE_NAME: demo_token},
+    )
+    assert resp.status_code == 404

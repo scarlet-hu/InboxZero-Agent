@@ -43,3 +43,40 @@ export async function api<T>(
 
 export const loginUrl = () => `${BACKEND_URL}/auth/login`;
 export const demoLoginUrl = () => `${BACKEND_URL}/auth/demo-login`;
+
+// ---------------------------------------------------------------------------
+// Draft review-approve HITL surface
+// ---------------------------------------------------------------------------
+
+export interface DraftContent {
+  draft_id: string;
+  to: string;
+  subject: string;
+  body: string;
+}
+
+export function getDraft(draftId: string): Promise<DraftContent> {
+  return api<DraftContent>(`/agent/drafts/${encodeURIComponent(draftId)}`);
+}
+
+export function updateDraft(
+  draftId: string,
+  payload: { subject: string; body: string },
+): Promise<DraftContent> {
+  return api<DraftContent>(`/agent/drafts/${encodeURIComponent(draftId)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendDraft(draftId: string): Promise<void> {
+  return api<void>(`/agent/drafts/${encodeURIComponent(draftId)}/send`, {
+    method: "POST",
+  });
+}
+
+export function discardDraft(draftId: string): Promise<void> {
+  return api<void>(`/agent/drafts/${encodeURIComponent(draftId)}`, {
+    method: "DELETE",
+  });
+}

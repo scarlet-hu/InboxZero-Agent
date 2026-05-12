@@ -1,14 +1,23 @@
 import asyncio
 from typing import List
 
-from app.models import EmailResult, GmailCredentials, ProcessRequest
+from app.models import DraftContent, DraftUpdate, EmailResult, GmailCredentials, ProcessRequest
 # TEMP: swapped to ReAct experiment build. Revert this import to switch back.
 from app.services.agent_core import create_inbox_agent
 # from app.services.agent_core_react import create_inbox_react_agent as create_inbox_agent
 from app.services.auth import SessionData, get_current_session
-from app.services.demo_data import get_demo_results
-from app.services.google_utils import fetch_unread_emails, get_calendar_service, get_gmail_service
+from app.services.demo_data import get_demo_draft, get_demo_results
+from app.services.google_utils import (
+    discard_draft,
+    fetch_unread_emails,
+    get_calendar_service,
+    get_gmail_service,
+    read_draft_content,
+    send_draft,
+    update_draft_content,
+)
 from fastapi import APIRouter, Depends, HTTPException
+from googleapiclient.errors import HttpError
 
 router = APIRouter()
 
@@ -82,3 +91,104 @@ async def get_usage(session: SessionData = Depends(get_current_session)):
         "used_today": 0,  # Connect to DB
         "remaining": 50,
     }
+
+
+# ---------------------------------------------------------------------------
+# Draft review endpoints — review-approve HITL
+# ---------------------------------------------------------------------------
+#
+# The agent creates Gmail drafts (no auto-send). These endpoints let the
+# dashboard fetch / edit / send / discard those drafts so the user keeps
+# final control over outbound mail. See docs/hitl-strong-design.md for
+# the planned LangGraph-interrupt variant.
+
+
+def _map_gmail_error(e: HttpError) -> HTTPException:
+    status = getattr(getattr(e, "resp", None), "status", 500)
+    if status == 404:
+        return HTTPException(status_code=404, detail="Draft not found")
+    if status in (401, 403):
+        return HTTPException(status_code=403, detail="Gmail rejected the request")
+    return HTTPException(status_code=502, detail=f"Gmail API error: {e}")
+
+
+@router.get("/drafts/{draft_id}", response_model=DraftContent)
+async def get_draft(
+    draft_id: str,
+    session: SessionData = Depends(get_current_session),
+):
+    """Return the current contents of a Gmail draft for editing."""
+    if session.is_demo:
+        demo = get_demo_draft(draft_id)
+        if not demo:
+            raise HTTPException(status_code=404, detail="Draft not found")
+        return DraftContent(**demo)
+
+    gmail_service = get_gmail_service(_credentials_from_session(session))
+    try:
+        return DraftContent(**read_draft_content(gmail_service, draft_id))
+    except HttpError as e:
+        raise _map_gmail_error(e) from e
+
+
+@router.put("/drafts/{draft_id}", response_model=DraftContent)
+async def update_draft(
+    draft_id: str,
+    payload: DraftUpdate,
+    session: SessionData = Depends(get_current_session),
+):
+    """Save edits to a draft (does not send)."""
+    if session.is_demo:
+        demo = get_demo_draft(draft_id)
+        if not demo:
+            raise HTTPException(status_code=404, detail="Draft not found")
+        # Demo mode: pretend we saved by echoing the edited payload.
+        return DraftContent(
+            draft_id=draft_id,
+            to=demo["to"],
+            subject=payload.subject,
+            body=payload.body,
+        )
+
+    gmail_service = get_gmail_service(_credentials_from_session(session))
+    try:
+        update_draft_content(gmail_service, draft_id, payload.subject, payload.body)
+        return DraftContent(**read_draft_content(gmail_service, draft_id))
+    except HttpError as e:
+        raise _map_gmail_error(e) from e
+
+
+@router.post("/drafts/{draft_id}/send", status_code=204)
+async def send_draft_endpoint(
+    draft_id: str,
+    session: SessionData = Depends(get_current_session),
+):
+    """Send a draft. Irreversible."""
+    if session.is_demo:
+        if not get_demo_draft(draft_id):
+            raise HTTPException(status_code=404, detail="Draft not found")
+        return  # demo: no-op
+
+    gmail_service = get_gmail_service(_credentials_from_session(session))
+    try:
+        send_draft(gmail_service, draft_id)
+    except HttpError as e:
+        raise _map_gmail_error(e) from e
+
+
+@router.delete("/drafts/{draft_id}", status_code=204)
+async def discard_draft_endpoint(
+    draft_id: str,
+    session: SessionData = Depends(get_current_session),
+):
+    """Delete a draft without sending."""
+    if session.is_demo:
+        if not get_demo_draft(draft_id):
+            raise HTTPException(status_code=404, detail="Draft not found")
+        return  # demo: no-op
+
+    gmail_service = get_gmail_service(_credentials_from_session(session))
+    try:
+        discard_draft(gmail_service, draft_id)
+    except HttpError as e:
+        raise _map_gmail_error(e) from e

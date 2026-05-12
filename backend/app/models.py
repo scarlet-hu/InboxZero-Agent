@@ -20,3 +20,17 @@ class EmailResult(BaseModel):
     summary: str
     draft_id: Optional[str]
     calendar_status: Optional[str]
+
+
+class DraftContent(BaseModel):
+    """Read response for a Gmail draft — what the dashboard needs to edit it."""
+    draft_id: str
+    to: str
+    subject: str
+    body: str
+
+
+class DraftUpdate(BaseModel):
+    """Request body for updating an existing draft (PUT /drafts/{id})."""
+    subject: str
+    body: str
